@@ -728,7 +728,7 @@ class ReadElf(object):
         if self.elffile['e_machine'] == 'EM_ARM':
             self._display_arch_specific_arm()
 
-    def display_hex_dump(self, section_spec):
+    def display_hex_dump(self, section_spec, str_addr):
         """ Display a hex dump of a section. section_spec is either a section
             number or a name.
         """
@@ -744,28 +744,38 @@ class ReadElf(object):
                 section_spec))
             return
 
-        self._emitline("\nHex dump of section '%s':" % section.name)
+        #self._emitline("\nHex dump of section '%s':" % section.name)
         self._note_relocs_for_section(section)
         addr = section['sh_addr']
         data = section.data()
         dataptr = 0
 
+        # 800e6369
         while dataptr < len(data):
+            if addr < int(str_addr,16):
+                addr += 1
+                dataptr += 1
+                continue
+
             bytesleft = len(data) - dataptr
+            bytes_per_line = 64
             # chunks of 16 bytes per line
-            linebytes = 16 if bytesleft > 16 else bytesleft
+            linebytes = bytes_per_line if bytesleft > bytes_per_line else bytesleft
 
             self._emit('  %s ' % self._format_hex(addr, fieldsize=8))
-            for i in range(16):
-                if i < linebytes:
-                    self._emit('%2.2x' % byte2int(data[dataptr + i]))
-                else:
-                    self._emit('  ')
-                if i % 4 == 3:
-                    self._emit(' ')
+            #for i in range(bytes_per_line):
+            #    if i < linebytes:
+            #        self._emit('%2.2x' % byte2int(data[dataptr + i]))
+            #    else:
+            #        self._emit('  ')
+            #    if i % 4 == 3:
+            #        self._emit(' ')
 
             for i in range(linebytes):
                 c = data[dataptr + i : dataptr + i + 1]
+                if byte2int(c[0]) == 0:
+                    print("")
+                    return
                 if byte2int(c[0]) >= 32 and byte2int(c[0]) < 0x7f:
                     self._emit(bytes2str(c))
                 else:
@@ -1546,6 +1556,9 @@ def main(stream=None):
     argparser.add_argument('-x', '--hex-dump',
             action='store', dest='show_hex_dump', metavar='<number|name>',
             help='Dump the contents of section <number|name> as bytes')
+    argparser.add_argument('-X', '--hex-dump-addr',
+            action='store', dest='show_hex_dump_addr', metavar='<number|name>',
+            help='Dump the contents of section <number|name> as bytes')
     argparser.add_argument('-p', '--string-dump',
             action='store', dest='show_string_dump', metavar='<number|name>',
             help='Dump the contents of section <number|name> as strings')
@@ -1604,7 +1617,9 @@ def main(stream=None):
             if args.show_arch_specific:
                 readelf.display_arch_specific()
             if args.show_hex_dump:
-                readelf.display_hex_dump(args.show_hex_dump)
+                with open(args.show_hex_dump_addr,"r") as f:
+                    for addr in f:
+                        readelf.display_hex_dump(args.show_hex_dump, addr)
             if args.show_string_dump:
                 readelf.display_string_dump(args.show_string_dump)
             if args.debug_dump_what:

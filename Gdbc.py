@@ -27,15 +27,17 @@ class Gdbc:
         self.gdbmi.write(cmd, read_response=False)
         logging.info("%s> %s" %(cmd_id,cmd))
         while True:
-            response = self.gdbmi.get_gdb_response(timeout_sec)
-            for r in response:
-                logging.info("%s< %s" % (cmd_id,json.dumps(r,indent=4)))
-                if r['message'] == msg or r['payload'] == '^done\r':
-                    return r
-
-                if msg != 'error' and r['message'] == 'error':
-                    raise BaseException("Unexpected error: %s" % r)
-            return response
+            try:
+                response = self.gdbmi.get_gdb_response(timeout_sec)
+                for r in response:
+                    logging.info("%s< %s" % (cmd_id,json.dumps(r,indent=4)))
+                    if r['message'] == msg or r['payload'] == '^done\r':
+                        return r
+                    if msg != 'error' and r['message'] == 'error':
+                        raise BaseException("Unexpected error: %s" % r)
+                return response
+            except GdbTimeoutError as e:
+                logging.error("%s", e)
 
 
     def push_elf_to_board(self, elf_file):

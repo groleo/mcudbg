@@ -5,10 +5,23 @@ Helpers I use toghether with OpenOCD and ARMGCC to run and debug on the mimxrt11
 ARMGCC's *bin* directory is assumed to be in $PATH.
 
 
-### swo_parse.py
+### parse_swo.py
 
 No-dependency ITM Packet parser.
-By default it opens ./swo-out.txt. You can specify the input file with the --input argument.
+By default it opens ./swo-out.txt.
+Input file is specified with the --input argument while --ascii <PORT> and --raw <PORT> <BYTES IN WORD>
+control which ports are ascii or raw.
+  
+Here's an example which parses ITM port 1 (memory traces),
+extracts the backtraces
+and then sorts them over the allocated size:
+  
+```shell
+./parse_swo.py --raw 1 4 &> memtrace-hex.txt
+sed -i -e 's/^.*port:1 \(.*\)/\1/g' memtrace-hex.txt
+./track_mem.py --input memtrace-hex.txt &> memtrace-bt.txt
+sort -n -k 3 -t , memtrace-bt.txt  > memtrace-bt-sorted.txt
+```
 
 
 ### Gdbc.py

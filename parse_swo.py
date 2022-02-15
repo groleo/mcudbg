@@ -28,10 +28,10 @@ class PACKET_TYPE:
 
 
 class Stream:
-    def __init__(self, id, header = ''):
+    def __init__(self, id):
         self.id = id
         self._buffer = []
-        self._header = header
+        self._header = ''
 
     def add_bytes(self, s):
         pass
@@ -53,27 +53,16 @@ class Stream:
 
 
 class RawStream(Stream):
-    def __init__(self, id, header = ''):
-        super().__init__(id, header)
-
-    def add_bytes(self, s):
-        for inb in s:
-            self._buffer.append(f'{inb:02x}')
-            logging.info("port:%s %s" % (self.id, self._header + ''.join(self._buffer)))
-            self._buffer = []
-        #print()
-
-
-class Uint32Stream(Stream):
-    def __init__(self, id, header = ''):
-        super().__init__(id, header)
+    def __init__(self, id, nb_bytes=1):
+        super().__init__(id)
+        self.__nb_bytes = nb_bytes
         self.__bcount = 0
 
     def add_bytes(self, s):
         for inb in s:
             self._buffer.append(f'{inb:02x}')
             self.__bcount += 1
-            if self.__bcount >= 4:
+            if self.__bcount >= self.__nb_bytes:
                 logging.info("port:%s 0x%s" % (self.id, self._header + ''.join(self._buffer)))
                 self.__bcount = 0
                 self._buffer = []
@@ -81,8 +70,8 @@ class Uint32Stream(Stream):
 
 
 class AsciiStream(Stream):
-    def __init__(self, id, header = ''):
-        super().__init__(id, header)
+    def __init__(self, id):
+        super().__init__(id)
 
     def add_bytes(self, s):
         for inb in s:
@@ -109,16 +98,14 @@ class StreamManager:
         self.itm_port = 0
         self.current_state = PACKET_TYPE.START
 
-    def add_raw_stream(self, port):
-        self._add_stream(RawStream(port, ''))
-
-    def add_uint32_stream(self, port):
-        self._add_stream(Uint32Stream(port, ''))
+    def add_raw_stream(self, port, nb_bytes):
+        self._add_stream(RawStream(port, nb_bytes))
 
     def add_ascii_stream(self, port):
-        self._add_stream(AsciiStream(port, ''))
+        self._add_stream(AsciiStream(port))
 
     def _add_stream(self, stream):
+        logging.info(f"port:{stream.id} added")
         self.streams[stream.id] = stream
 
     def _handle_start(self):
@@ -395,6 +382,7 @@ class StreamManager:
             PACKET_TYPE.RESERVED_HEADER   : _handle_reserved,
             PACKET_TYPE.RESERVED          : _handle_reserved,
     }
+
     def _packet_handler(self, packet_type):
         return self.handler_table[packet_type](self)
 
@@ -406,7 +394,7 @@ class StreamManager:
         self.trace_bytes = self.trace_bytes[1:]
 
     def _parse_bytes(self, itm_bytes):
-        self.trace_bytes = self.itm_accumulator + itm_bytes
+        self.trace_bytes = self.trace_bytes + itm_bytes
 
         while len(self.trace_bytes) > 0:
             rv = self._packet_handler(self.current_state)
@@ -436,7 +424,7 @@ if __name__ == "__main__":
     parser.add_argument('--input', required=False, help='Input file to parse', default='c:/Users/nxf25307/workspace/debug/openocd-code-2/swo-cm7.bin')
     parser.add_argument('--debug', required=False, help='Enable logging.DEBUG', action='count', default=0)
     parser.add_argument('--ascii', required=False, help='Port data is ascii', type=int, action='append')
-    parser.add_argument('--uint32', required=False, help='Port data is uint32', type=int, action='append')
+    parser.add_argument('--raw', nargs=2, required=False, help='Port data is binary <port> <nb bytes>', type=int, action='append')
 
     args = parser.parse_args()
 
@@ -446,14 +434,14 @@ if __name__ == "__main__":
     logging.basicConfig(format="%(asctime)s - %(levelname)-8s: %(message)s", level=logging_level)
 
     streams = StreamManager()
-    streams.add_ascii_stream(0)
+    #streams.add_ascii_stream(0)
 
     if args.ascii:
         for port in args.ascii:
             streams.add_ascii_stream(port)
 
-    if args.uint32:
-        for port in args.uint32:
-            streams.add_uint32_stream(port)
+    if args.raw:
+        for port,nb_bytes in args.raw:
+            streams.add_raw_stream(port, nb_bytes)
 
     parse_file(args.input, streams)

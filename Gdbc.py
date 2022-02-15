@@ -78,14 +78,20 @@ class Gdbc:
             # Bit 0: CYCCNTENA
             self.run_cmd(25,'-interpreter-exec console "monitor cm7.cpu mww 0xE0001000 0x1207"')
             # Configure SWO
-            self.run_cmd(25,'-interpreter-exec console "monitor cm7.cpu itm port 0 on"')
-            # Port 1: memory allocations
-            self.run_cmd(26,'-interpreter-exec console "monitor cm7.cpu itm port 1 off"')
-            # Port 2: locking
-            self.run_cmd(27,'-interpreter-exec console "monitor cm7.cpu itm port 2 off"')
-            # Port 3: signals
-            self.run_cmd(28,'-interpreter-exec console "monitor cm7.cpu itm port 3 off"')
-            self.run_cmd(29,'-interpreter-exec console "monitor cm7.apb.swo enable"')
+            ITM_PORT_MEM    = '1 on'
+            ITM_PORT_LOCK   = '2 off'
+            ITM_PORT_SIGNAL = '3 off'
+            ITM_PORT_VIDMEM = '4 off'
+            ITM_PORT_HOOK   = '5 off'
+            ITM_PORT_STRTAB = '6 off'
+            self.run_cmd(25,f'-interpreter-exec console "monitor cm7.cpu itm port 0 on"')
+            self.run_cmd(26,f'-interpreter-exec console "monitor cm7.cpu itm port {ITM_PORT_MEM}"')
+            self.run_cmd(27,f'-interpreter-exec console "monitor cm7.cpu itm port {ITM_PORT_LOCK}"')
+            self.run_cmd(28,f'-interpreter-exec console "monitor cm7.cpu itm port {ITM_PORT_SIGNAL}"')
+            self.run_cmd(28,f'-interpreter-exec console "monitor cm7.cpu itm port {ITM_PORT_VIDMEM}"')
+            self.run_cmd(28,f'-interpreter-exec console "monitor cm7.cpu itm port {ITM_PORT_HOOK}"')
+            self.run_cmd(28,f'-interpreter-exec console "monitor cm7.cpu itm port {ITM_PORT_STRTAB}"')
+            self.run_cmd(29,f'-interpreter-exec console "monitor cm7.apb.swo enable"')
             # Download
             self.run_cmd(30,'-target-download', msg='done')
             self.run_cmd(31,'-list-thread-groups')

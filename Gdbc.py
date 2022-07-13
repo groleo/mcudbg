@@ -9,6 +9,7 @@
 import sys
 import json
 import logging
+import argparse
 
 from pygdbmi import gdbcontroller
 from pygdbmi.constants import GdbTimeoutError
@@ -22,6 +23,15 @@ global_timeout = 3
 class Gdbc:
     def __init__(self):
         self.gdbmi = gdbcontroller.GdbController(command=CFG_GDB_EXEC)
+        self.itm_ports = [
+                           'on', # log
+                           'off',# mem
+                           'off',# lock
+                           'off',# signal
+                           'off',# vidmem
+                           'off',# hook
+                           'off',# strtab
+                         ]
 
     def run_cmd(self, cmd_id, cmd, timeout_sec=global_timeout, msg=r'done'):
         self.gdbmi.write(cmd, read_response=False)
@@ -38,7 +48,10 @@ class Gdbc:
                 return response
             except GdbTimeoutError as e:
                 logging.error("%s", e)
-
+    def port_enable(self, port):
+        self.itm_ports[port] = 'on'
+    def port_disable(self, port):
+        self.itm_ports[port] = 'off'
 
     def push_elf_to_board(self, elf_file):
         try:
@@ -71,26 +84,26 @@ class Gdbc:
             self.run_cmd(22,'-gdb-set range-stepping on')
             self.run_cmd(23,'-interpreter-exec console "monitor arm semihosting enable"')
             self.run_cmd(24,'-interpreter-exec console "monitor arm semihosting_cmdline app_freertos.elf"')
-            # Configure DWT_CTRL : 0x1207
-            # Bit 12: PCSAMPLEENA
-            # Bit 9: CYCTAP
-            # Bits 4-1: POSTPRESET
-            # Bit 0: CYCCNTENA
-            self.run_cmd(25,'-interpreter-exec console "monitor cm7.cpu mww 0xE0001000 0x1207"')
+            # The DWT unit generates PC samples at fixed time intervals, with
+            # an accuracy of one clock cycle.
+            # The POSTCNT counter period determines the PC sampling interval,
+            # and software configures the DWT_CTRL.CYCTAP field to
+            # determine how POSTCNT relates to the processor cycle counter, CYCCNT.
+            # The DWT_CTRL.PCSAMPLENA bit enables PC sampling.
+            # pg799
+            # Bit 12, PCSAMPLEENA - Enables use of POSTCNT counter as a timer for Periodic PC sample packet generation
+            # Bit 9, CYCTAP - Selects the position of the POSTCNT tap on the CYCCNT counter
+            #             0 - (Processor clock)/64
+            #             1 - (Processor clock)/1024
+            # Bits 4:1, POSTPRESET - Reload value for the POSTCNT counter.
+            # Bit 0, CYCCNTENA - Enables CYCCNT.
+            # sampling_freq = cpu_freq / (7*1024)
+            #self.run_cmd(25,'-interpreter-exec console "monitor cm7.cpu mww 0xE0001000 0x%x"' % 0b1001000000001)
             # Configure SWO
-            ITM_PORT_MEM    = '1 on'
-            ITM_PORT_LOCK   = '2 off'
-            ITM_PORT_SIGNAL = '3 off'
-            ITM_PORT_VIDMEM = '4 off'
-            ITM_PORT_HOOK   = '5 off'
-            ITM_PORT_STRTAB = '6 off'
-            self.run_cmd(25,f'-interpreter-exec console "monitor cm7.cpu itm port 0 on"')
-            self.run_cmd(26,f'-interpreter-exec console "monitor cm7.cpu itm port {ITM_PORT_MEM}"')
-            self.run_cmd(27,f'-interpreter-exec console "monitor cm7.cpu itm port {ITM_PORT_LOCK}"')
-            self.run_cmd(28,f'-interpreter-exec console "monitor cm7.cpu itm port {ITM_PORT_SIGNAL}"')
-            self.run_cmd(28,f'-interpreter-exec console "monitor cm7.cpu itm port {ITM_PORT_VIDMEM}"')
-            self.run_cmd(28,f'-interpreter-exec console "monitor cm7.cpu itm port {ITM_PORT_HOOK}"')
-            self.run_cmd(28,f'-interpreter-exec console "monitor cm7.cpu itm port {ITM_PORT_STRTAB}"')
+            self.run_cmd(25,f'-interpreter-exec console "monitor cm7.cpu itm configure -tx on -swo on -trace-bus-id 1"')
+            for port_id,port_state in enumerate(self.itm_ports):
+                self.run_cmd(25,f'-interpreter-exec console "monitor cm7.cpu itm port {port_id} {port_state}"')
+            self.run_cmd(25,f'-interpreter-exec console "monitor cm7.cpu itm enable"')
             self.run_cmd(29,f'-interpreter-exec console "monitor cm7.apb.swo enable"')
             # Download
             self.run_cmd(30,'-target-download', msg='done')
@@ -123,18 +136,37 @@ class Gdbc:
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
-        print("usage: Gdbc.py <elf_file>")
-        print("")
-        sys.exit(1)
-    elf_file = sys.argv[1]
-    logging.basicConfig(format="%(asctime)s - %(levelname)-8s: %(message)s", level=logging.DEBUG)
+    parser = argparse.ArgumentParser(description="with GDB-MI.")
+    parser.add_argument('--input', required=True, help='Input ELF file to load.')
+    parser.add_argument('--debug', required=False, help='Enable logging.DEBUG', action='count', default=0)
+    parser.add_argument('--mem', required=False, help='Enable the Memory ITM Port (1)', action='store_true')
+    parser.add_argument('--lock', required=False, help='Enable the Lock ITM Port (2)', action='store_true')
+    parser.add_argument('--signal', required=False, help='Enable the Signal ITM Port (3)', action='store_true')
+    parser.add_argument('--vidmem', required=False, help='Enable the Vidmem ITM Port (4)', action='store_true')
+    parser.add_argument('--hook', required=False, help='Enable the Hook ITM Port (5)', action='store_true')
+    parser.add_argument('--strtab', required=False, help='Enable the String ITM Port (6)', action='store_true')
+
+    args = parser.parse_args()
+    logging_level = logging.INFO
+    if args.debug:
+        logging_level = logging.DEBUG
+    logging.basicConfig(format="%(asctime)s - %(levelname)-8s: %(message)s", level=logging_level)
+
     gdbc = Gdbc()
+
+    if args.mem: gdbc.port_enable(1)
+    if args.lock: gdbc.port_enable(2)
+    if args.signal: gdbc.port_enable(3)
+    if args.vidmem: gdbc.port_enable(4)
+    if args.hook: gdbc.port_enable(5)
+    if args.strtab: gdbc.port_enable(6)
+
     try:
-        gdbc.push_elf_to_board(elf_file)
+        gdbc.push_elf_to_board(args.input)
     except BaseException as e:
         print(e)
         sys.exit(1)
+
     print()
     print("* press any key to interrupt execution")
     sys.stdin.read(1)

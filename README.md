@@ -42,3 +42,8 @@ Here's an example of this process:
 ./dwt-to-gmon.py --input dwt-pc.txt
 arm-none-eabi-gprof.exe $binary_path/$binary_file > report.txt
 ```
+
+
+### exidx-backtrace
+
+Traverses the ARM Exception Table to obtain an execution backtrace.

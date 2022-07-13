@@ -8,7 +8,7 @@ import argparse
 # allocated address
 # allocated size
 
-regex = re.compile("(?P<op>0x6d6e|0x6d64)(?P<nb_elem>[0-9]+)$")
+regex = re.compile("(?P<op>0x6d6[e,4])(?P<nb_elem>[0-9a-f]+)$", re.I)
 
 allocations = {}
 

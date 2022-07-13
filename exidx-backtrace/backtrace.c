@@ -516,9 +516,12 @@ btexidx_next_frame(backtrace_frame_regs_t *frame)
         ucb.vrs[REG_LR] = *stack--;
     }
 
-    /* We are done if current frame->pc is equal to the virtual pc */
-    if (frame->pc == ucb.vrs[REG_PC])
-        return _URC_OK;
+    /* 
+     * We are done if current frame->pc is equal to the virtual pc.
+     * Clear the last bit in VRS when compare as this was cleared in btexidx_unwind_frame.
+    */
+    if (frame->pc == (ucb.vrs[REG_PC] & 0xfffffffeU))
+        return _URC_FAILURE;
 
     /* Update the frame */
     frame->pc = ucb.vrs[REG_PC];

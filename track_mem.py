@@ -53,9 +53,7 @@ def dump_stack(stack,a2l):
     ret = []
     for addr in stack:
         func_name, file, line = a2l.lookup(addr)
-        if func_name == "??":
-            ret.append([func_name])
-        else:
+        if func_name != "??":
             ret.append([func_name, file, line])
     ret.reverse()
     return ret
@@ -81,65 +79,75 @@ if __name__ == "__main__":
         state = OP_MATCH
         nb_elem = 0
         addr = ''
-        size = ''
+        size = 0
         op = ''
         stack = []
-        max_mem = 0
+        size_max = 0
+        size_cur = 0
         for line in mem:
             m = regex.match(line)
+            #print("%s %s %s %s" % (line.rstrip(), state, op, nb_elem))
             if state == OP_MATCH and m and m.group('op') == '0x6d6e':
-                nb_elem = int(m.group('nb_elem'))
+                nb_elem = int(m.group('nb_elem'), 16)
                 state = MADDR_NEW
                 op = 'new'
+                nb_elem -= 1
                 continue
             if state == OP_MATCH and m and m.group('op') == '0x6d64':
-                nb_elem = int(m.group('nb_elem'))
+                nb_elem = int(m.group('nb_elem'), 16)
                 state = MADDR_DEL
                 op = 'del'
+                nb_elem -= 1
                 continue
             if state == MADDR_NEW:
                 addr = line.rstrip()
                 state = MADDR_SIZE
+                nb_elem -= 1
                 continue
             if state == MADDR_SIZE:
                 size = int(line.rstrip(), 16)
                 state = BACKTRACE
+                nb_elem -= 1
                 continue
             if state == MADDR_DEL:
                 addr = line.rstrip()
                 state = BACKTRACE
+                nb_elem -= 1
                 continue
             if state == BACKTRACE:
                 stack.append(line.rstrip())
                 nb_elem -= 1
-                if nb_elem <= 0:
+                if nb_elem <= 1:
                     state = STATISTIC
                 continue
             if state == STATISTIC:
                 if op == 'new':
                     if addr in allocations and allocations[addr]['lotted'] == 1:
-                        print("New:ERROR: memory already allocated: %s" % addr)
+                        print("ErrNew-already,%s, %s, %s" % (addr, size, dump_stack(stack, a2l)))
                     else:
                         allocations[addr] = {'size': size, 'stack': stack, 'lotted': 1}
                         print("New,%s, %s, %s" % (addr, size, dump_stack(stack, a2l)))
-                        max_mem += size
+                        size_cur += size
+                        if size_cur >= size_max: size_max = size_cur
+
                 if op == 'del':
                     if addr not in allocations:
-                        print("Del:ERROR: address was never allocated: %s" % addr)
+                        print("ErrDel-unknown,%s, %s" % (addr, dump_stack(stack, a2l)))
                     elif allocations[addr]['lotted'] == 0:
-                        print("Del:ERROR: address already freed: %s" % addr)
+                        print("ErrDel-double,%s, %s" % (addr, dump_stack(stack, a2l)))
                     else:
                         allocations[addr]['lotted'] = 0
                         print("Del,%s, %s" % (addr, dump_stack(stack, a2l)))
+                        size_cur -= allocations[addr]['size']
                 state = OP_MATCH
                 nb_elem = 0
                 addr = ''
-                size = ''
+                size = 0
                 op = ''
                 stack = []
 
-    #####
+    print("\n\n")
     for addr in allocations:
         if allocations[addr]['lotted'] == 1:
-            print("leak(%s) %s B -> %s"% (addr, allocations[addr]['size'], dump_stack(allocations[addr]['stack'], a2l)))
-    print("max_mem: %d" % max_mem)
+            print("Leak,%s, %s, %s"% (addr, allocations[addr]['size'], dump_stack(allocations[addr]['stack'], a2l)))
+    print("size_max: %d" % size_max)

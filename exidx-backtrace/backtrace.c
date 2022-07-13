@@ -252,6 +252,7 @@ personality_routine_exec(unwind_control_block_t *ucb)
         } else if ((byte1 & 0xf0) == 0x80) {
             /* 1000iiii iiiiiiii (i not all 0)
              * Pop up to 12 integer registers under masks {r15-r12}, {r11-r4} */
+            uint8_t popped_ps = 0;
             rc = btexidx_get_next_byte(ucb, &byte2);
             if (rc != _URC_CONTINUE_UNWIND)
                 return rc;
@@ -259,6 +260,10 @@ personality_routine_exec(unwind_control_block_t *ucb)
             /* Pop registers using mask */
             vsp = (uint32_t *)ucb->vrs[REG_SP];
             mask = (byte1 << 8 | byte2) & 0x0fff;
+
+            if ((mask & (1 << (13 - 4)) != 0)) {
+                popped_ps = 1;
+            }
 
             reg = 4;
             while (mask != 0) {
@@ -268,8 +273,15 @@ personality_routine_exec(unwind_control_block_t *ucb)
                 ++reg;
             }
 
-            /* Patch up the vrs sp if it was in the mask */
-            if ((mask & (1 << (13 - 4))) != 0)
+            /*
+             * 10.3 Frame unwinding instructions (Remark b) for Pop
+             * The sole exception to this rule is popping r13,
+             * when the writeback of the loaded value to vsp is
+             * delayed until after the whole instruction has completed.
+             * 
+             * Update VSP only if not popped.
+             */
+            if (!popped_ps)
                 ucb->vrs[REG_SP] = (uint32_t)vsp;
 
         } else if ((byte1 & 0xf0) == 0x90
@@ -504,9 +516,12 @@ btexidx_next_frame(backtrace_frame_regs_t *frame)
         ucb.vrs[REG_LR] = *stack--;
     }
 
-    /* We are done if current frame->pc is equal to the virtual pc */
-    if (frame->pc == ucb.vrs[REG_PC])
-        return _URC_OK;
+    /* 
+     * We are done if current frame->pc is equal to the virtual pc.
+     * Clear the last bit in VRS when compare as this was cleared in btexidx_unwind_frame.
+    */
+    if (frame->pc == (ucb.vrs[REG_PC] & 0xfffffffeU))
+        return _URC_FAILURE;
 
     /* Update the frame */
     frame->pc = ucb.vrs[REG_PC];

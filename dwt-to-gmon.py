@@ -4,10 +4,15 @@
 #
 # Author: Adrian Negreanu
 
+import sys
 import struct
 import argparse
+import re
+
 from ctypes import *
 from enum import IntEnum
+
+regex = re.compile("(?:.*dwt-pc:)(?P<pc>0x[0-9a-f]{8})$", re.I)
 
 
 # From https://gist.github.com/lmyyao/355709b35b717c9e47c6795de7b45ccd
@@ -47,7 +52,10 @@ def read_dwt_pc(fname):
     hist = {}
     with open(fname, 'rt') as f:
         for line in f:
-            addr = int(line,16)
+            m = regex.match(line)
+            if not m: continue
+            addr = int(m.group('pc'), 16)
+            #print("ADDR:%s" % addr)
             if addr not in hist:
                 hist[addr] = 1
             else:
@@ -63,18 +71,23 @@ if __name__ == '__main__':
     hist = read_dwt_pc(args.input)
     hist_size = len(hist)
 
+    if hist_size == 0:
+        print(f"no 'dwt-pc:' entries in '{args.input}'")
+        sys.exit(-1)
+
     low_pc = min(hist.items(), key = lambda x: x[0])[0]
     high_pc = max(hist.items(), key = lambda x: x[0])[0]
     address_space = high_pc - low_pc
     num_buckets = address_space // 2
 
+    # Profiling clock rate.
     # See the DWT CTRL setup in Gdbc.py
-    # only when you're interested in the actual time spent.
     prof_rate = 140000
 
     file_hdr = FileHeader(b"gmon", 0x00000001)
     # +1 to account for the Histogram header too.
-    hist_hdr = HistogramHeader(RecordTag.TIME_HIST, low_pc, high_pc, num_buckets+1, prof_rate, b"seconds", b"s")
+    # "s" for "seconds"  "m" for "milliseconds"
+    hist_hdr = HistogramHeader(RecordTag.TIME_HIST, low_pc, high_pc, num_buckets+1, prof_rate, b"milliseconds", b"m")
 
     print(f'low_pc:{low_pc:x}')
     print(f'high_pc:{high_pc:x}')
@@ -89,6 +102,7 @@ if __name__ == '__main__':
             if addr in hist:
                 value = hist[addr]
                 del hist[addr]
+            #print("0x%x -> %d" % (addr, value))
             f.write((value & 0xFFFF).to_bytes(2, byteorder='little'))
 
     # addresses that were not dumped (there shouldn't be any)
